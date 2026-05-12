@@ -18,24 +18,20 @@ def cls_pooling(model_output):
     return model_output.last_hidden_state[:, 0]
 
 def get_embeddings(tokenizer, model, text):
-    encoded_input = tokenizer(
-        text, padding=True, truncation=True, max_length=512, return_tensors="pt"
-    )
+    # This model is stable and doesn't need position_id hacks
+    encoded_input = tokenizer(text, padding=True, truncation=True, return_tensors="pt")
+    encoded_input = {k: v.to(device) for k, v in encoded_input.items()}
     
-    # Standard models don't need the custom position_id/token_type hacks
-    input_ids = encoded_input['input_ids'].to(device)
-    attention_mask = encoded_input['attention_mask'].to(device)
-
     with torch.no_grad():
-        model_output = model(input_ids=input_ids, attention_mask=attention_mask)
-        
-    # Standard pooling
-    emb = model_output.last_hidden_state[:, 0]
+        model_output = model(**encoded_input)
     
-    # Normalize for FAISS
+    # Standard Mean Pooling (Better for this specific model)
+    token_embeddings = model_output[0]
+    input_mask_expanded = encoded_input['attention_mask'].unsqueeze(-1).expand(token_embeddings.size()).float()
+    emb = torch.sum(token_embeddings * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=1e-9)
+    
     import torch.nn.functional as F
     emb = F.normalize(emb, p=2, dim=1)
-    
     return emb.detach().cpu().numpy()
 
 def preprocess(tokenizer, model, text):
@@ -78,15 +74,9 @@ def get_images_list(df, uniq_ids):
 
 
 def main():
-    # Load tokenizer normally
-    tokenizer = AutoTokenizer.from_pretrained("Alibaba-NLP/gte-base-en-v1.5")
-    
-    # NEW: Load without 'trust_remote_code' and force float32 immediately
-    model = AutoModel.from_pretrained(
-        "Alibaba-NLP/gte-base-en-v1.5", 
-        trust_remote_code=False,  # This forces standard, stable behavior
-        torch_dtype=torch.float32
-    )
+    # Switching to a high-stability model for CPU deployment
+    tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/all-MiniLM-L6-v2")
+    model = AutoModel.from_pretrained("sentence-transformers/all-MiniLM-L6-v2")
     model = model.to(device)
     model.eval()
     # Professional Pathing: Get the directory where app.py is located
