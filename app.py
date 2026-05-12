@@ -74,61 +74,63 @@ def get_images_list(df, uniq_ids):
 
 
 
+import faiss  # Ensure this is lowercase at the top of your script
+
 def main():
-    # 1. Load the stable model
+    # 1. Load the stable model (384 dimensions)
     tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/all-MiniLM-L6-v2")
     model = AutoModel.from_pretrained("sentence-transformers/all-MiniLM-L6-v2")
     model = model.to(device)
     model.eval()
-    # Professional Pathing: Get the directory where app.py is located
 
+    # 2. Setup paths correctly
     curr_dir = os.path.dirname(os.path.abspath(__file__))
     data_path = os.path.join(curr_dir, "Data", "data", "flipkart_com-ecommerce_sample.csv")
     df = pd.read_csv(data_path)
-    # Apply the same robust pathing to your numpy file
+    
     embeddings_path = os.path.join(curr_dir, "embeddings.npy")
+    ids_path = os.path.join(curr_dir, "id_list.npy")
+    
+    # 3. Load data with safety checks
     all_embeddings = np.load(embeddings_path).astype('float32')
+    ids = np.load(ids_path, allow_pickle=True)
+
+    # 4. THE LOOP BREAKER: Dynamically build the index to match your data shape
+    # This prevents the AssertionError: d == self.d
     dimension = all_embeddings.shape[1] 
     index = faiss.IndexFlatL2(dimension)
-    index.add(all_embeddings)
-    ids_path = os.path.join(curr_dir, "id_list.npy")   
-    ids = np.load(ids_path, allow_pickle=True)
+    index.add(all_embeddings) 
+    
     st.title("Retrieval Search")
     user_text = st.text_area('Enter your query below', value="A red skirt")
     generate_response_btn = st.button('Search for products!')
     
-    if generate_response_btn and user_text is not None:
+    if generate_response_btn and user_text:
         emb = preprocess(tokenizer, model, user_text)
-        distances, idx = find_similar(emb)
-        idx = np.array(idx).flatten()
         
-        # --- DIAGNOSTIC INJECTION ---
-        st.error(f"DEBUG: Are embeddings corrupted? {np.isnan(emb).any()}")
-        st.error(f"DEBUG: What did FAISS return? {idx}")
-        st.error(f"DEBUG: First 3 IDs in the file: {ids[:3]}")
-        # ----------------------------
+        # Search the dynamically created index
+        distances, idx = index.search(emb.reshape(1, -1), k=6)
+        idx = np.array(idx).flatten()
         
         uniq_ids = [ids[i] for i in idx]
         images_links, product_names = get_images_list(df, uniq_ids)
 
-        # Display the results
         st.write("**Products**:")
-        
         if not images_links:
             st.error("No valid images could be extracted for this query.")
             
-        for image_list in images_links:
-            st.write(product_names[images_links.index(image_list)])
+        for i, image_list in enumerate(images_links):
+            st.write(product_names[i])
             cols = st.columns(len(image_list), gap="medium")
-            for i, image_link in enumerate(image_list):
-                with cols[i]:
+            for j, image_link in enumerate(image_list):
+                with cols[j]:
                     try:
                         response = requests.get(image_link)
                         response.raise_for_status()
                         image = Image.open(BytesIO(response.content))
                         st.image(image)
-                    except Exception as e:
-                        st.error("Could not load image. Link might be broken.")
+                    except Exception:
+                        st.error("Image link broken.")
 
 if __name__ == "__main__":
     main()
