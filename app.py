@@ -97,9 +97,13 @@ def main():
     if generate_response_btn and user_text is not None:
         emb = preprocess(tokenizer, model, user_text)
         distances, idx = find_similar(emb)
-        
-        # FIX: FAISS returns a 2D array. We must flatten it so Python can read the IDs properly.
         idx = np.array(idx).flatten()
+        
+        # --- DIAGNOSTIC INJECTION ---
+        st.error(f"DEBUG: Are embeddings corrupted? {np.isnan(emb).any()}")
+        st.error(f"DEBUG: What did FAISS return? {idx}")
+        st.error(f"DEBUG: First 3 IDs in the file: {ids[:3]}")
+        # ----------------------------
         
         uniq_ids = [ids[i] for i in idx]
         images_links, product_names = get_images_list(df, uniq_ids)
