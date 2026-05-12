@@ -60,14 +60,22 @@ def main():
     model = AutoModel.from_pretrained("Alibaba-NLP/gte-base-en-v1.5", trust_remote_code=True)
     model = model.to(device)
 
-    curr_dir = os.getcwd()
+    # Professional Pathing: Get the directory where app.py is located
+    curr_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    # Construct the path relative to app.py
+    # IMPORTANT: Ensure the capitalization here matches your GitHub folders EXACTLY
     data_path = os.path.join(curr_dir, "Data", "data", "flipkart_com-ecommerce_sample.csv")
     df = pd.read_csv(data_path)
 
-    ids = np.load("id_list.npy")
+    # Apply the same robust pathing to your numpy file
+    ids_path = os.path.join(curr_dir, "id_list.npy")
+    ids = np.load(ids_path)
+    
     st.title("Retrieval Search")
-    user_text = st.text_area('Enter you query below', value = "A red skirt")
+    user_text = st.text_area('Enter your query below', value="A red skirt")
     generate_response_btn = st.button('Search for products!')
+    
     if generate_response_btn and user_text is not None:
         emb = preprocess(tokenizer, model, user_text)
         distances, idx = find_similar(emb)
@@ -81,11 +89,13 @@ def main():
             cols = st.columns(len(image_list), gap="medium")
             for i, image_link in enumerate(image_list):
                 with cols[i]:
-                    response = requests.get(image_link)
-                    image = Image.open(BytesIO(response.content))
-                    # image = image.resize((500, 500))
-                    st.image(image)
-                    
+                    try:
+                        response = requests.get(image_link)
+                        response.raise_for_status() # Check for broken links
+                        image = Image.open(BytesIO(response.content))
+                        st.image(image)
+                    except Exception as e:
+                        st.error(f"Could not load image. Link might be broken.")
 
 if __name__ == "__main__":
-    main()    
+    main()
