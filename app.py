@@ -4,7 +4,7 @@ import torch
 import requests
 import numpy as np
 import pandas as pd
-import faiss  # Corrected lowercase import
+import faiss  
 from PIL import Image
 from io import BytesIO
 import streamlit as st
@@ -23,12 +23,10 @@ def get_embeddings(tokenizer, model, text):
     with torch.no_grad():
         model_output = model(**encoded_input)
     
-    # Mean Pooling
     token_embeddings = model_output[0]
     input_mask_expanded = encoded_input['attention_mask'].unsqueeze(-1).expand(token_embeddings.size()).float()
     emb = torch.sum(token_embeddings * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=1e-9)
     
-    # L2 Normalization is critical for accurate FAISS L2 distance searching
     import torch.nn.functional as F
     emb = F.normalize(emb, p=2, dim=1)
     return emb.detach().cpu().numpy()
@@ -68,7 +66,7 @@ def get_images_list(df, uniq_ids):
 def main():
     st.title("Retrieval Search")
     
-    # 1. Load Stable Model (MiniLM-L6-v2)
+    # 1. Load Stable Model
     @st.cache_resource
     def load_model():
         tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/all-MiniLM-L6-v2")
@@ -87,8 +85,7 @@ def main():
     all_embeddings = np.load(embeddings_path).astype('float32')
     ids = np.load(ids_path, allow_pickle=True)
 
-    # 3. Dynamic Indexing (The Loop Breaker)
-    # This rebuilds the index to match the embeddings.npy file dimensions exactly
+    # 3. Dynamic Indexing
     dimension = all_embeddings.shape[1] 
     index = faiss.IndexFlatL2(dimension)
     index.add(all_embeddings)
@@ -99,8 +96,6 @@ def main():
     
     if generate_response_btn and user_text:
         emb = preprocess(tokenizer, model, user_text)
-        
-        # Search against the memory-resident index
         distances, idx = index.search(emb.reshape(1, -1), k=6)
         idx = np.array(idx).flatten()
         
@@ -108,6 +103,10 @@ def main():
         images_links, product_names = get_images_list(df, uniq_ids)
 
         st.write("**Results:**")
+        
+        # Placeholder for dead links
+        PLACEHOLDER = "https://via.placeholder.com/150?text=No+Image+Available"
+        
         if not images_links:
             st.error("No matches found in the database.")
             
@@ -117,9 +116,15 @@ def main():
             for j, link in enumerate(images_links[i]):
                 with cols[j]:
                     try:
-                        st.image(link, use_container_width=True)
+                        # Professional approach: Check link status with a timeout
+                        response = requests.get(link, timeout=2)
+                        if response.status_code == 200:
+                            st.image(link, use_container_width=True)
+                        else:
+                            st.image(PLACEHOLDER, use_container_width=True)
                     except:
-                        continue
+                        # Fallback to placeholder on any error
+                        st.image(PLACEHOLDER, use_container_width=True)
 
 if __name__ == "__main__":
     main()
