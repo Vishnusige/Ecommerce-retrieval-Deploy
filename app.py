@@ -21,18 +21,16 @@ def get_embeddings(tokenizer, model, text):
     encoded_input = tokenizer(
         text, padding=True, truncation=True, return_tensors="pt"
     )
+    
+    # Remove token_type_ids if present (this prevents the RoPE indexing crashes!)
+    if 'token_type_ids' in encoded_input:
+        del encoded_input['token_type_ids']
+        
     encoded_input = {k: v.to(device) for k, v in encoded_input.items()}
     
-    # Explicit Position ID mapping to prevent RoPE boundary indexing errors
-    seq_length = encoded_input['input_ids'].shape[1]
-    position_ids = torch.arange(0, seq_length, dtype=torch.long, device=device)
-    position_ids = position_ids.unsqueeze(0).expand(encoded_input['input_ids'].shape[0], -1)
-    encoded_input['position_ids'] = position_ids
-
     with torch.no_grad():
         model_output = model(**encoded_input)
         
-    # Pool the output and move to CPU
     return cls_pooling(model_output).detach().cpu().numpy()
 
 def preprocess(tokenizer, model, text):
@@ -76,8 +74,15 @@ def get_images_list(df, uniq_ids):
 
 def main():
     tokenizer = AutoTokenizer.from_pretrained("Alibaba-NLP/gte-base-en-v1.5")
-    model = AutoModel.from_pretrained("Alibaba-NLP/gte-base-en-v1.5", trust_remote_code=True)
+    
+    # THE SILVER BULLET: Force float32 so the CPU doesn't crash on bfloat16 math
+    model = AutoModel.from_pretrained(
+        "Alibaba-NLP/gte-base-en-v1.5", 
+        trust_remote_code=True,
+        torch_dtype=torch.float32
+    )
     model = model.to(device)
+    model.eval() # Lock the model for inference
 
     # Professional Pathing: Get the directory where app.py is located
     curr_dir = os.path.dirname(os.path.abspath(__file__))
