@@ -18,26 +18,30 @@ def cls_pooling(model_output):
     return model_output.last_hidden_state[:, 0]
 
 def get_embeddings(tokenizer, model, text):
+    # Tokenize with strict boundaries
     encoded_input = tokenizer(
-        text, padding=True, truncation=True, return_tensors="pt"
+        text, max_length=512, padding=True, truncation=True, return_tensors="pt"
     )
     
-    # FIX 1: Explicitly map position_ids to prevent the RoPE IndexError
-    seq_length = encoded_input['input_ids'].shape[1]
-    position_ids = torch.arange(0, seq_length, dtype=torch.long, device=device)
-    position_ids = position_ids.unsqueeze(0).expand(encoded_input['input_ids'].shape[0], -1)
-    encoded_input['position_ids'] = position_ids
-
-    # FIX 2: Remove token_type_ids to prevent CPU architecture clashes
-    if 'token_type_ids' in encoded_input:
-        del encoded_input['token_type_ids']
-        
-    encoded_input = {k: v.to(device) for k, v in encoded_input.items()}
+    # Extract only the essential inputs to prevent architecture clashes
+    input_ids = encoded_input['input_ids'].to(device)
+    attention_mask = encoded_input['attention_mask'].to(device)
+    
+    # Explicitly map position_ids to prevent the RoPE IndexError
+    seq_length = input_ids.shape[1]
+    position_ids = torch.arange(0, seq_length, dtype=torch.long, device=device).unsqueeze(0)
     
     with torch.no_grad():
-        model_output = model(**encoded_input)
+        # Execute the model with strict parameter control
+        model_output = model(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            position_ids=position_ids
+        )
         
-    return cls_pooling(model_output).detach().cpu().numpy()
+    # Extract the CLS token and forcefully cast to float32 to obliterate NaNs
+    emb = model_output.last_hidden_state[:, 0]
+    return emb.to(torch.float32).detach().cpu().numpy()
 
 def preprocess(tokenizer, model, text):
     nltk.download('stopwords')
@@ -81,14 +85,14 @@ def get_images_list(df, uniq_ids):
 def main():
     tokenizer = AutoTokenizer.from_pretrained("Alibaba-NLP/gte-base-en-v1.5")
     
-    # THE SILVER BULLET: Force float32 so the CPU doesn't crash on bfloat16 math
+    # The Sledgehammer: `.float()` aggressively converts every hidden layer to 32-bit precision
     model = AutoModel.from_pretrained(
         "Alibaba-NLP/gte-base-en-v1.5", 
-        trust_remote_code=True,
-        torch_dtype=torch.float32
-    )
+        trust_remote_code=True
+    ).float() 
+    
     model = model.to(device)
-    model.eval() # Lock the model for inference
+    model.eval() # Lock the model strictly for inference
 
     # Professional Pathing: Get the directory where app.py is located
     curr_dir = os.path.dirname(os.path.abspath(__file__))
