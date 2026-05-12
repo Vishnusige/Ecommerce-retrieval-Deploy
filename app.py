@@ -4,6 +4,7 @@ import torch
 import requests
 import numpy as np
 import pandas as pd
+import faiss
 from PIL import Image
 from io import BytesIO
 import streamlit as st
@@ -74,22 +75,24 @@ def get_images_list(df, uniq_ids):
 
 
 def main():
-    # Switching to a high-stability model for CPU deployment
+    # 1. Load the stable model
     tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/all-MiniLM-L6-v2")
     model = AutoModel.from_pretrained("sentence-transformers/all-MiniLM-L6-v2")
     model = model.to(device)
     model.eval()
     # Professional Pathing: Get the directory where app.py is located
+
     curr_dir = os.path.dirname(os.path.abspath(__file__))
-    
-    # Construct the path relative to app.py
-    # IMPORTANT: Ensure the capitalization here matches your GitHub folders EXACTLY
     data_path = os.path.join(curr_dir, "Data", "data", "flipkart_com-ecommerce_sample.csv")
     df = pd.read_csv(data_path)
-
     # Apply the same robust pathing to your numpy file
-    ids_path = os.path.join(curr_dir, "id_list.npy")
-    ids = np.load(ids_path, allow_pickle=True)     
+    embeddings_path = os.path.join(curr_dir, "embeddings.npy")
+    all_embeddings = np.load(embeddings_path).astype('float32')
+    dimension = all_embeddings.shape[1] 
+    index = faiss.IndexFlatL2(dimension)
+    index.add(all_embeddings)
+    ids_path = os.path.join(curr_dir, "id_list.npy")   
+    ids = np.load(ids_path, allow_pickle=True)
     st.title("Retrieval Search")
     user_text = st.text_area('Enter your query below', value="A red skirt")
     generate_response_btn = st.button('Search for products!')
