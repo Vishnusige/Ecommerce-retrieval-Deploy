@@ -19,27 +19,20 @@ def cls_pooling(model_output):
 
 def get_embeddings(tokenizer, model, text):
     encoded_input = tokenizer(
-        text, max_length=512, padding=True, truncation=True, return_tensors="pt"
+        text, padding=True, truncation=True, max_length=512, return_tensors="pt"
     )
     
+    # Standard models don't need the custom position_id/token_type hacks
     input_ids = encoded_input['input_ids'].to(device)
     attention_mask = encoded_input['attention_mask'].to(device)
-    
-    # Explicitly map position_ids to prevent the RoPE IndexError on CPU
-    seq_length = input_ids.shape[1]
-    position_ids = torch.arange(0, seq_length, dtype=torch.long, device=device).unsqueeze(0)
-    
+
     with torch.no_grad():
-        model_output = model(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            position_ids=position_ids
-        )
+        model_output = model(input_ids=input_ids, attention_mask=attention_mask)
         
-    # Extract the CLS token
+    # Standard pooling
     emb = model_output.last_hidden_state[:, 0]
     
-    # THE MISSING LINK: Normalize the vector so FAISS can compare it accurately!
+    # Normalize for FAISS
     import torch.nn.functional as F
     emb = F.normalize(emb, p=2, dim=1)
     
@@ -85,17 +78,17 @@ def get_images_list(df, uniq_ids):
 
 
 def main():
+    # Load tokenizer normally
     tokenizer = AutoTokenizer.from_pretrained("Alibaba-NLP/gte-base-en-v1.5")
     
-    # Safe 32-bit loading that preserves the AI weights
+    # NEW: Load without 'trust_remote_code' and force float32 immediately
     model = AutoModel.from_pretrained(
         "Alibaba-NLP/gte-base-en-v1.5", 
-        trust_remote_code=True,
-        torch_dtype=torch.float32 
+        trust_remote_code=False,  # This forces standard, stable behavior
+        torch_dtype=torch.float32
     )
     model = model.to(device)
     model.eval()
-
     # Professional Pathing: Get the directory where app.py is located
     curr_dir = os.path.dirname(os.path.abspath(__file__))
     
