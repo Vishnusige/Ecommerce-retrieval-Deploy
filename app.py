@@ -18,30 +18,32 @@ def cls_pooling(model_output):
     return model_output.last_hidden_state[:, 0]
 
 def get_embeddings(tokenizer, model, text):
-    # Tokenize with strict boundaries
     encoded_input = tokenizer(
         text, max_length=512, padding=True, truncation=True, return_tensors="pt"
     )
     
-    # Extract only the essential inputs to prevent architecture clashes
     input_ids = encoded_input['input_ids'].to(device)
     attention_mask = encoded_input['attention_mask'].to(device)
     
-    # Explicitly map position_ids to prevent the RoPE IndexError
+    # Explicitly map position_ids to prevent the RoPE IndexError on CPU
     seq_length = input_ids.shape[1]
     position_ids = torch.arange(0, seq_length, dtype=torch.long, device=device).unsqueeze(0)
     
     with torch.no_grad():
-        # Execute the model with strict parameter control
         model_output = model(
             input_ids=input_ids,
             attention_mask=attention_mask,
             position_ids=position_ids
         )
         
-    # Extract the CLS token and forcefully cast to float32 to obliterate NaNs
+    # Extract the CLS token
     emb = model_output.last_hidden_state[:, 0]
-    return emb.to(torch.float32).detach().cpu().numpy()
+    
+    # THE MISSING LINK: Normalize the vector so FAISS can compare it accurately!
+    import torch.nn.functional as F
+    emb = F.normalize(emb, p=2, dim=1)
+    
+    return emb.detach().cpu().numpy()
 
 def preprocess(tokenizer, model, text):
     nltk.download('stopwords')
@@ -85,14 +87,14 @@ def get_images_list(df, uniq_ids):
 def main():
     tokenizer = AutoTokenizer.from_pretrained("Alibaba-NLP/gte-base-en-v1.5")
     
-    # The Sledgehammer: `.float()` aggressively converts every hidden layer to 32-bit precision
+    # Safe 32-bit loading that preserves the AI weights
     model = AutoModel.from_pretrained(
         "Alibaba-NLP/gte-base-en-v1.5", 
-        trust_remote_code=True
-    ).float() 
-    
+        trust_remote_code=True,
+        torch_dtype=torch.float32 
+    )
     model = model.to(device)
-    model.eval() # Lock the model strictly for inference
+    model.eval()
 
     # Professional Pathing: Get the directory where app.py is located
     curr_dir = os.path.dirname(os.path.abspath(__file__))
