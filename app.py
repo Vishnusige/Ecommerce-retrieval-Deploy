@@ -89,8 +89,7 @@ def main():
 
     # Apply the same robust pathing to your numpy file
     ids_path = os.path.join(curr_dir, "id_list.npy")
-    ids = np.load(ids_path)
-    
+    ids = np.load(ids_path, allow_pickle=True)     
     st.title("Retrieval Search")
     user_text = st.text_area('Enter your query below', value="A red skirt")
     generate_response_btn = st.button('Search for products!')
