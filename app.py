@@ -55,27 +55,21 @@ def get_images_list(df, uniq_ids):
     product_names = []
     
     for id in uniq_ids:
-        # 1. Force both IDs to strings to prevent any hidden type-mismatch errors
         matched_row = df[df['uniq_id'].astype(str) == str(id)]
         
-        # 2. Only proceed if the product actually exists in the CSV
         if not matched_row.empty:
             try:
-                # Extract values safely
                 img_str = matched_row['image'].values[0]
                 name_val = matched_row['product_name'].values[0]
-                
-                # Parse the stringified list into an actual Python list
                 img_list = eval(img_str)
-                
-                # Append to our final lists
                 images_list.append(img_list)
                 product_names.append(name_val)
             except Exception as e:
-                # If a product has a corrupted image link or eval() fails, 
-                # we just skip it quietly rather than crashing the app!
                 continue
-                
+        else:
+            # If a mismatch happens, display it on the screen so we aren't flying blind
+            st.warning(f"Data Mismatch: FAISS returned ID {id}, but it is missing from the CSV.")
+            
     return images_list, product_names
 
 
@@ -104,11 +98,19 @@ def main():
     if generate_response_btn and user_text is not None:
         emb = preprocess(tokenizer, model, user_text)
         distances, idx = find_similar(emb)
+        
+        # FIX: FAISS returns a 2D array. We must flatten it so Python can read the IDs properly.
+        idx = np.array(idx).flatten()
+        
         uniq_ids = [ids[i] for i in idx]
         images_links, product_names = get_images_list(df, uniq_ids)
 
         # Display the results
         st.write("**Products**:")
+        
+        if not images_links:
+            st.error("No valid images could be extracted for this query.")
+            
         for image_list in images_links:
             st.write(product_names[images_links.index(image_list)])
             cols = st.columns(len(image_list), gap="medium")
@@ -116,11 +118,11 @@ def main():
                 with cols[i]:
                     try:
                         response = requests.get(image_link)
-                        response.raise_for_status() # Check for broken links
+                        response.raise_for_status()
                         image = Image.open(BytesIO(response.content))
                         st.image(image)
                     except Exception as e:
-                        st.error(f"Could not load image. Link might be broken.")
+                        st.error("Could not load image. Link might be broken.")
 
 if __name__ == "__main__":
     main()
