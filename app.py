@@ -22,7 +22,13 @@ def get_embeddings(tokenizer, model, text):
         text, padding=True, truncation=True, return_tensors="pt"
     )
     
-    # Remove token_type_ids if present (this prevents the RoPE indexing crashes!)
+    # FIX 1: Explicitly map position_ids to prevent the RoPE IndexError
+    seq_length = encoded_input['input_ids'].shape[1]
+    position_ids = torch.arange(0, seq_length, dtype=torch.long, device=device)
+    position_ids = position_ids.unsqueeze(0).expand(encoded_input['input_ids'].shape[0], -1)
+    encoded_input['position_ids'] = position_ids
+
+    # FIX 2: Remove token_type_ids to prevent CPU architecture clashes
     if 'token_type_ids' in encoded_input:
         del encoded_input['token_type_ids']
         
