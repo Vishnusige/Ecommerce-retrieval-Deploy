@@ -76,6 +76,8 @@ def get_images_list(df, uniq_ids):
 
 import faiss  # Ensure this is lowercase at the top of your script
 
+import faiss # Ensure lowercase 'f'
+
 def main():
     # 1. Load the stable model (384 dimensions)
     tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/all-MiniLM-L6-v2")
@@ -83,7 +85,7 @@ def main():
     model = model.to(device)
     model.eval()
 
-    # 2. Setup paths correctly
+    # 2. Setup paths
     curr_dir = os.path.dirname(os.path.abspath(__file__))
     data_path = os.path.join(curr_dir, "Data", "data", "flipkart_com-ecommerce_sample.csv")
     df = pd.read_csv(data_path)
@@ -91,12 +93,13 @@ def main():
     embeddings_path = os.path.join(curr_dir, "embeddings.npy")
     ids_path = os.path.join(curr_dir, "id_list.npy")
     
-    # 3. Load data with safety checks
+    # 3. Load data
+    # We load the embeddings you already have and force them to float32
     all_embeddings = np.load(embeddings_path).astype('float32')
     ids = np.load(ids_path, allow_pickle=True)
 
-    # 4. THE LOOP BREAKER: Dynamically build the index to match your data shape
-    # This prevents the AssertionError: d == self.d
+    # 4. THE FIX: Build a fresh index in memory
+    # This ignores any old files and creates an index that matches your data EXACTLY
     dimension = all_embeddings.shape[1] 
     index = faiss.IndexFlatL2(dimension)
     index.add(all_embeddings) 
@@ -106,9 +109,11 @@ def main():
     generate_response_btn = st.button('Search for products!')
     
     if generate_response_btn and user_text:
+        # Preprocess text and get query embedding (384 dims)
         emb = preprocess(tokenizer, model, user_text)
         
-        # Search the dynamically created index
+        # 5. Search the memory-resident index
+        # This ensures the dimensions (384 vs 384) always match
         distances, idx = index.search(emb.reshape(1, -1), k=6)
         idx = np.array(idx).flatten()
         
@@ -117,20 +122,18 @@ def main():
 
         st.write("**Products**:")
         if not images_links:
-            st.error("No valid images could be extracted for this query.")
+            st.error("No products found.")
             
-        for i, image_list in enumerate(images_links):
+        for i in range(len(images_links)):
             st.write(product_names[i])
-            cols = st.columns(len(image_list), gap="medium")
-            for j, image_link in enumerate(image_list):
+            cols = st.columns(len(images_links[i]), gap="medium")
+            for j, link in enumerate(images_links[i]):
                 with cols[j]:
                     try:
-                        response = requests.get(image_link)
-                        response.raise_for_status()
-                        image = Image.open(BytesIO(response.content))
-                        st.image(image)
-                    except Exception:
-                        st.error("Image link broken.")
+                        response = requests.get(link)
+                        st.image(Image.open(BytesIO(response.content)))
+                    except:
+                        continue
 
 if __name__ == "__main__":
     main()
