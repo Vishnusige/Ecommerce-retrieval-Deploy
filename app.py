@@ -22,8 +22,16 @@ def get_embeddings(tokenizer, model, text):
         text, padding=True, truncation=True, return_tensors="pt"
     )
     encoded_input = {k: v.to(device) for k, v in encoded_input.items()}
+    
+    # Explicit Position ID mapping to prevent RoPE boundary indexing errors
+    seq_length = encoded_input['input_ids'].shape[1]
+    position_ids = torch.arange(0, seq_length, dtype=torch.long, device=device)
+    position_ids = position_ids.unsqueeze(0).expand(encoded_input['input_ids'].shape[0], -1)
+    encoded_input['position_ids'] = position_ids
+
     with torch.no_grad():
         model_output = model(**encoded_input)
+        
     # Pool the output and move to CPU
     return cls_pooling(model_output).detach().cpu().numpy()
 
