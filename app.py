@@ -53,12 +53,29 @@ def preprocess(tokenizer, model, text):
 def get_images_list(df, uniq_ids):
     images_list = []
     product_names = []
+    
     for id in uniq_ids:
-        ls = df[df['uniq_id'] == id]['image'].values[0]
-        ls = eval(ls)
-        images_list.append(ls)
-        ls = df[df['uniq_id'] == id]['product_name'].values[0]
-        product_names.append(ls)
+        # 1. Force both IDs to strings to prevent any hidden type-mismatch errors
+        matched_row = df[df['uniq_id'].astype(str) == str(id)]
+        
+        # 2. Only proceed if the product actually exists in the CSV
+        if not matched_row.empty:
+            try:
+                # Extract values safely
+                img_str = matched_row['image'].values[0]
+                name_val = matched_row['product_name'].values[0]
+                
+                # Parse the stringified list into an actual Python list
+                img_list = eval(img_str)
+                
+                # Append to our final lists
+                images_list.append(img_list)
+                product_names.append(name_val)
+            except Exception as e:
+                # If a product has a corrupted image link or eval() fails, 
+                # we just skip it quietly rather than crashing the app!
+                continue
+                
     return images_list, product_names
 
 
