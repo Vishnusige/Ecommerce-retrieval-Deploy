@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: ecommerce-semantic-search
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: streamlit run app.py --server.port $PORT --server.address 0.0.0.0
+    envVars:
+      - key: MODEL_NAME
+        value: sentence-transformers/all-MiniLM-L6-v2
+      - key: TOP_K
+        value: 6
+      - key: REQUEST_TIMEOUT_SECONDS
+        value: 2.5
